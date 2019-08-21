@@ -2,12 +2,12 @@
 使用ECMAScript绘制二维图片。📊📈🎉 Drawing Two-Dimensional Pictures Using ECMAScript.
 
 <a href="https://www.travis-ci.org/yelloxing/image2D"><img src="https://www.travis-ci.org/yelloxing/image2D.svg?branch=master" alt="travis"></a>
-<a href="https://npmcharts.com/compare/image2d?minimal=true"><img src="https://img.shields.io/npm/dm/image2d.svg" alt="Downloads"></a>
+<a href="https://yelloxing.github.io/npm-downloads?interval=7&packages=image2d"><img src="https://img.shields.io/npm/dm/image2d.svg" alt="Downloads"></a>
 <a href="https://www.npmjs.com/package/image2d"><img src="https://img.shields.io/npm/v/image2d.svg" alt="Version"></a>
 <a href="https://github.com/yelloxing/image2D/blob/master/LICENSE"><img src="https://img.shields.io/npm/l/image2d.svg" alt="License"></a>
 
 ## Documentation
-访问[在线接口文档](https://yelloxing.github.io/image2D/)。
+使用中可以访问[在线接口文档](https://yelloxing.github.io/image2D/)，如果想参与进来，可以访问[开发需知](https://github.com/yelloxing/image2D/blob/master/CONTRIBUTING.md)。
 
 ## Issues
 使用的时候遇到任何问题或有好的建议，请点击进入[issue](https://github.com/yelloxing/image2D/issues)！
@@ -41,4 +41,4 @@ const $$ = require("image2d");
 
 [MIT](https://github.com/yelloxing/image2D/blob/master/LICENSE)
 
-Copyright (c) 2007-present, yelloxing
+Copyright (c) 2007夏-present 走一步 再走一步

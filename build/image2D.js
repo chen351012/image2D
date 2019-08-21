@@ -5,14 +5,14 @@
     *
     * author 心叶
     *
-    * version 1.1.0
+    * version 1.2.1
     *
     * build Thu Apr 11 2019
     *
     * Copyright yelloxing
     * Released under the MIT license
     *
-    * Date:Fri Jun 28 2019 09:44:39 GMT+0800 (GMT+08:00)
+    * Date:Tue Aug 20 2019 10:19:52 GMT+0800 (GMT+08:00)
     */
 
 "use strict";
@@ -281,21 +281,89 @@ var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol
                             }
     }
 
+    /**
+     * 设计需求是：
+     * image2D和image2D(selector[, context])
+     * 分别表示绘图类和绘图对象
+     *
+     * 题外：为什么不选择image2D和new image2D(selector[, context])?
+     * 只是感觉没有前面的写法用起来简洁
+     *
+     * 为了实现需求，第一反应是：
+     * let image2D=function(selector,context){
+     *      return new image2D();
+     * };
+     *
+     * 在image2D上挂载静态方法，在image2D.prototype上挂载对象方法，
+     * 看起来稳的很，其实这明显是一个死循环。
+     *
+     * 为了解决这个问题，我们在image2D的原型上定义了一个方法：
+     * image2D.prototype.init=function(selector,context){
+     *      return this;
+     * };
+     *
+     *  执行下面的方法：
+     *  let temp=image2D.prototype.init(selector, context);
+     *  上面返回的temp很明显就是image2D.prototype，其实就是image2D对象
+     * （例如：new A()，其实就是取A.prototype，这样对比就很好理解了）
+     *
+     * 因此可以改造代码如下：
+     *
+     * 这样image2D和new image2D(selector[, context])就分别表示类和对象。
+     *
+     * 问：看起来是不是实现了？
+     * 答：是的，实现了。
+     * 问：可是总感觉有点不好，说不出为什么。
+     * 答：是不是感觉image2D()打印出来的东西有点多？
+     * 问：是的。
+     *
+     * 事实上，因为直接取image2D.prototype作为new image2D(),
+     * 理论上说，使用上区别不大，唯一不足的是，
+     * 挂载在image2D.prototype上的方法会在打印image2D对象的时候看见，不舒服。
+     *
+     * 为了看起来好看些，代码再次改造：
+     * let image2D = function (selector, context) {
+     *      return new image2D.prototype.init(selector, context);
+     * };
+     *
+     * 为了让image2D(selector, context)返回的是image2D对象，需要修改image2D.prototype.init的原型：
+     * image2D.prototype.init.prototype = image2D.prototype;
+     *
+     * 这样：
+     *      image2D(selector, context) ==
+     *      return new image2D.prototype.init(selector, context) ==
+     *      image2D.prototype.init.prototype ==
+     *      image2D.prototype ==
+     *      new image2D(selector, context)
+     *
+     * 此时需求就实现了，
+     * 而且打印image2D(selector, context)的时候，
+     * 对象上的方法都在原型上，看起来就比较舒服了。
+     */
+
     var image2D = function image2D(selector, context) {
         return new image2D.prototype.init(selector, context);
     };
 
     image2D.prototype.init = function (selector, context) {
+
+        // 如果没有传递，默认使用document作为上下文
         this.context = context = context || document;
+
+        // 使用sizzle获取需要维护的结点，并把结点维护到image2D对象中
         var nodes = sizzle(selector, context),
             flag = void 0;
         for (flag = 0; flag < nodes.length; flag++) {
             this[flag] = nodes[flag];
         }
+
+        // 设置结点个数
         this.length = nodes.length;
         return this;
     };
 
+    // 扩展方法
+    // 在image2D和image2D.prototype上分别调用extend方法就可以在类和对象上扩展方法了
     image2D.prototype.extend = image2D.extend = function () {
 
         var target = arguments[0] || {};
@@ -322,6 +390,11 @@ var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol
             try {
                 target[key] = source[key];
             } catch (e) {
+
+                // 为什么需要try{}catch(e){}？
+                // 一些对象的特殊属性不允许覆盖，比如name
+                // 执行：image2D.extend({'name':'新名称'})
+                // 会抛出TypeError
                 throw new Error("Illegal property value！");
             }
         }
@@ -1167,6 +1240,8 @@ var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol
         // 获取样式
         if (arguments.length <= 1 && (arguments.length <= 0 || _typeof(arguments[0]) !== 'object')) {
             if (this.length <= 0) throw new Error('Target empty!');
+
+            // 为了获取非style定义的样式，需要使用特殊的方法获取
             return getStyle(this[0], arguments[0]);
         }
 
@@ -1326,9 +1401,14 @@ var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol
      * @param {Event} event
      */
     var position = function position(event) {
+
+        // 返回元素的大小及其相对于视口的位置
         var bounding = this[0].getBoundingClientRect();
+
         if (!event || !event.clientX) throw new Error('Event is necessary!');
         return {
+
+            // 鼠标相对元素位置 = 鼠标相对窗口坐标 - 元素相对窗口坐标
             "x": event.clientX - bounding.left,
             "y": event.clientY - bounding.top
         };
@@ -1404,18 +1484,64 @@ var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol
         return painter;
     };
 
+    // 画矩形统一设置方法
+    var initRect = function initRect(painter, x, y, width, height) {
+        painter.beginPath();
+        painter.rect(x, y, width, height);
+        return painter;
+    };
+
+    var linearGradient = function linearGradient(painter, x0, y0, x1, y1) {
+        var gradient = painter.createLinearGradient(x0, y0, x1, y1);
+        var enhanceGradient = {
+            "value": function value() {
+                return gradient;
+            },
+            "addColorStop": function addColorStop(stop, color) {
+                gradient.addColorStop(stop, color);
+                return enhanceGradient;
+            }
+        };
+        return enhanceGradient;
+    };
+
     // 加强版本的画笔
     function painter_canvas2D(canvas) {
 
+        // 获取canvas2D画笔
         var painter = canvas.getContext("2d");
+
+        // 如果没有针对模糊问题处理
+        if (canvas.__had_scale2_canvas__ !== 'YES') {
+            canvas.__had_scale2_canvas__ = 'YES';
+
+            var width = canvas.clientWidth || canvas.getAttribute('width'),
+                //内容+内边距
+            height = canvas.clientHeight || canvas.getAttribute('height');
+
+            // 设置显示大小
+            canvas.style.width = width + "px";
+            canvas.style.height = height + "px";
+
+            // 设置画布大小（画布大小设置为显示的二倍，使得显示的时候更加清晰）
+            canvas.setAttribute('width', width * 2);
+            canvas.setAttribute('height', height * 2);
+
+            // 通过缩放实现模糊问题
+            painter.scale(2, 2);
+        }
+
+        // 默认配置canvas2D对象已经存在的属性
+        painter.textBaseline = 'middle';
+        painter.textAlign = 'left';
 
         // 默认配置不应该有canvas2D对象已经存在的属性
         // 这里是为了简化或和svg统一接口而自定义的属性
         var _config2 = {
-            "font-size": "16",
-            "font-family": "sans-serif",
-            "arc-start-cap": "butt",
-            "arc-end-cap": "butt"
+            "font-size": "16", // 文字大小
+            "font-family": "sans-serif", // 字体
+            "arc-start-cap": "butt", // 弧开始闭合方式
+            "arc-end-cap": "butt" // 弧结束闭合方式
         };
 
         // 画笔
@@ -1468,9 +1594,24 @@ var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol
                 painter.stroke();return enhancePainter;
             },
 
+            "save": function save() {
+                painter.save();return enhancePainter;
+            },
+            "restore": function restore() {
+                painter.restore();return enhancePainter;
+            },
+
+            // 路径 - 贝塞尔曲线
+            "quadraticCurveTo": function quadraticCurveTo(cpx, cpy, x, y) {
+                painter.quadraticCurveTo(cpx, cpy, x, y);return enhancePainter;
+            },
+            "bezierCurveTo": function bezierCurveTo(cp1x, cp1y, cp2x, cp2y, x, y) {
+                painter.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, x, y);return enhancePainter;
+            },
+
             // 擦除画面
-            "clearn": function clearn(x, y, width, height) {
-                painter.clearRect(x || 0, y || 0, width || canvas.clientWidth, height || canvas.clientHeight);return enhancePainter;
+            "clearRect": function clearRect(x, y, width, height) {
+                painter.clearRect(x || 0, y || 0, width || canvas.getAttribute('width') / 2, height || canvas.getAttribute('height') / 2);return enhancePainter;
             },
 
             // 地址图片
@@ -1480,7 +1621,8 @@ var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol
 
             // image
             "drawImage": function drawImage(img, sx, sy, sw, sh, x, y, w, h) {
-                painter.drawImage(img, sx, sy, sw, sh, x, y, w, h);return enhancePainter;
+                painter.drawImage(img, sx || 0, sy || 0, sw ? sw * 2 : canvas.getAttribute('width'), sh ? sh * 2 : canvas.getAttribute('height'), x || 0, y || 0, w || canvas.getAttribute('width') / 2, h || canvas.getAttribute('height') / 2);
+                return enhancePainter;
             },
 
             // 弧
@@ -1497,8 +1639,46 @@ var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol
             },
             "strokeCircle": function strokeCircle(cx, cy, r) {
                 initCircle(painter, cx, cy, r).stroke();return enhancePainter;
-            }
+            },
 
+            // 矩形
+            "fillRect": function fillRect(x, y, width, height) {
+                initRect(painter, x, y, width, height).fill();return enhancePainter;
+            },
+            "strokeRect": function strokeRect(x, y, width, height) {
+                initRect(painter, x, y, width, height).stroke();return enhancePainter;
+            },
+
+            /**
+            * 渐变
+            * -------------
+            */
+
+            //  线性渐变
+            "createLinearGradient": function createLinearGradient(x0, y0, x1, y1) {
+                return linearGradient(painter, x0, y0, x1, y1);
+            },
+
+            /**
+             * 变换
+             * --------------
+             */
+
+            //  移动
+            // 用来移动 canvas 的原点到指定的位置
+            "translate": function translate(x, y) {
+                painter.translate(x, y);return enhancePainter;
+            },
+
+            //  旋转
+            "rotate": function rotate(deg) {
+                painter.rotate(deg);return enhancePainter;
+            },
+
+            // 缩放
+            "scale": function scale(x, y) {
+                y = y || x;painter.scale(x, y);return enhancePainter;
+            }
         };
 
         return enhancePainter;
@@ -1579,6 +1759,44 @@ var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol
         return painter;
     };
 
+    // 画矩形统一设置方法
+    var initRect$1 = function initRect$1(painter, x, y, width, height) {
+        if (painter[0].nodeName.toLowerCase() !== 'rect') throw new Error('Need a <rect> !');
+        painter.attr({
+            "x": x,
+            "y": y,
+            "width": width,
+            "height": height
+        });
+        return painter;
+    };
+
+    var initDefs = function initDefs(target) {
+        var defs = target.getElementsByTagName('defs');
+        if (defs.length <= 0) {
+            defs = [toNode$1("<defs>", "SVG")];
+            target.appendChild(defs[0]);
+        }
+        return defs[0];
+    };
+
+    var linearGradient$1 = function linearGradient$1(painter, target, x0, y0, x1, y1) {
+        var defs = initDefs(target);
+        var gradientId = "image2D-lg-" + new Date().valueOf() + "-" + Math.random();
+        var gradientDom = toNode$1('<linearGradient id="' + gradientId + '" x1="' + x0 + '%" y1="' + y0 + '%" x2="' + x1 + '%" y2="' + y1 + '%"></linearGradient>');
+        target.appendChild(gradientDom);
+        var enhanceGradient = {
+            "value": function value() {
+                return "url(#" + gradientId + ")";
+            },
+            "addColorStop": function addColorStop(stop, color) {
+                gradientDom.appendChild(toNode$1('<stop offset="' + stop * 100 + '%" style="stop-color:' + color + ';" />'));
+                return enhanceGradient;
+            }
+        };
+        return enhanceGradient;
+    };
+
     function painter_svg(target, selector) {
 
         var painter = void 0;
@@ -1609,6 +1827,10 @@ var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol
         // 路径(和canvas2D的类似)
         var path = "";
 
+        // 变换（和canvas2D的类似，内部维护了用于记录）
+        var transform_history = [],
+            transform_current = "";
+
         // 画笔
         var enhancePainter = {
 
@@ -1625,19 +1847,19 @@ var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol
 
             // 基础方法
             "bind": function bind(selector) {
-                painter = image2D(selector, target);return enhancePainter;
+                painter = image2D(selector, target);return this;
             },
             "appendTo": function appendTo(selector) {
-                painter.appendTo(selector, target);return enhancePainter;
+                painter.appendTo(selector || target, target);return enhancePainter;
             },
             "prependTo": function prependTo(selector) {
-                painter.prependTo(selector, target);return enhancePainter;
+                painter.prependTo(selector || target, target);return enhancePainter;
             },
             "afterTo": function afterTo(selector) {
-                painter.afterTo(selector, target);return enhancePainter;
+                painter.afterTo(selector || target, target);return enhancePainter;
             },
             "beforeTo": function beforeTo(selector) {
-                painter.beforeTo(selector, target);return enhancePainter;
+                painter.beforeTo(selector || target, target);return enhancePainter;
             },
 
             // 路径
@@ -1654,40 +1876,99 @@ var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol
                 path += "L" + x + " " + y;return enhancePainter;
             },
             "fill": function fill() {
-                initPath(painter, path).attr("fill", _config3.fillStyle);
+                initPath(painter, path).attr('transform', transform_current).attr("fill", _config3.fillStyle);
                 return enhancePainter;
             },
             "stroke": function stroke() {
-                initPath(painter, path).attr({ "stroke-width": _config3.lineWidth, "stroke": _config3.strokeStyle, "fill": "none" });
+                initPath(painter, path).attr('transform', transform_current).attr({ "stroke-width": _config3.lineWidth, "stroke": _config3.strokeStyle, "fill": "none" });
                 return enhancePainter;
+            },
+
+            "save": function save() {
+                transform_history.push(transform_current);
+                return enhancePainter;
+            },
+            "restore": function restore() {
+                if (transform_history.length > 0) transform_current = transform_history.pop();
+                return enhancePainter;
+            },
+
+            // 路径 - 贝塞尔曲线
+            "quadraticCurveTo": function quadraticCurveTo(cpx, cpy, x, y) {
+                path += "Q" + cpx + " " + cpy + "," + x + " " + y;return enhancePainter;
+            },
+            "bezierCurveTo": function bezierCurveTo(cp1x, cp1y, cp2x, cp2y, x, y) {
+                path += "C" + cp1x + " " + cp1y + "," + cp2x + " " + cp2y + "," + x + " " + y;return enhancePainter;
             },
 
             // 文字
             "fillText": function fillText(text, x, y, deg) {
-                initText$1(painter, _config3, x, y, deg || 0).attr("fill", _config3.fillStyle)[0].textContent = text;
+                initText$1(painter, _config3, x, y, deg || 0).attr('transform', transform_current).attr("fill", _config3.fillStyle)[0].textContent = text;
                 return enhancePainter;
             },
             "strokeText": function strokeText(text, x, y, deg) {
-                initText$1(painter, _config3, x, y, deg || 0).attr({ "stroke": _config3.strokeStyle, "fill": "none" })[0].textContent = text;
+                initText$1(painter, _config3, x, y, deg || 0).attr('transform', transform_current).attr({ "stroke": _config3.strokeStyle, "fill": "none" })[0].textContent = text;
                 return enhancePainter;
             },
 
             // 弧
             "fillArc": function fillArc(cx, cy, r1, r2, beginDeg, deg) {
-                initArc$1(painter, _config3, cx, cy, r1, r2, beginDeg, deg).attr("fill", _config3.fillStyle);
+                initArc$1(painter, _config3, cx, cy, r1, r2, beginDeg, deg).attr('transform', transform_current).attr("fill", _config3.fillStyle);
                 return enhancePainter;
             },
             "strokeArc": function strokeArc(cx, cy, r1, r2, beginDeg, deg) {
-                initArc$1(painter, _config3, cx, cy, r1, r2, beginDeg, deg).attr({ "stroke-width": _config3.lineWidth, "stroke": _config3.strokeStyle, "fill": "none" });
+                initArc$1(painter, _config3, cx, cy, r1, r2, beginDeg, deg).attr('transform', transform_current).attr({ "stroke-width": _config3.lineWidth, "stroke": _config3.strokeStyle, "fill": "none" });
                 return enhancePainter;
             },
 
             // 圆形
             "fillCircle": function fillCircle(cx, cy, r) {
-                initCircle$1(painter, cx, cy, r).attr("fill", _config3.fillStyle);return enhancePainter;
+                initCircle$1(painter, cx, cy, r).attr('transform', transform_current).attr("fill", _config3.fillStyle);return enhancePainter;
             },
             "strokeCircle": function strokeCircle(cx, cy, r) {
-                initCircle$1(painter, cx, cy, r).attr({ "stroke-width": _config3.lineWidth, "stroke": _config3.strokeStyle, "fill": "none" });return enhancePainter;
+                initCircle$1(painter, cx, cy, r).attr('transform', transform_current).attr({ "stroke-width": _config3.lineWidth, "stroke": _config3.strokeStyle, "fill": "none" });return enhancePainter;
+            },
+
+            // 矩形
+            "fillRect": function fillRect(x, y, width, height) {
+                initRect$1(painter, x, y, width, height).attr('transform', transform_current).attr("fill", _config3.fillStyle);return enhancePainter;
+            },
+            "strokeRect": function strokeRect(x, y, width, height) {
+                initRect$1(painter, x, y, width, height).attr('transform', transform_current).attr({ "stroke-width": _config3.lineWidth, "stroke": _config3.strokeStyle, "fill": "none" });return enhancePainter;
+            },
+
+            /**
+             * 渐变
+             * -------------
+             */
+
+            //  线性渐变
+            "createLinearGradient": function createLinearGradient(x0, y0, x1, y1) {
+                return linearGradient$1(painter, target, x0, y0, x1, y1);
+            },
+
+            /**
+             * 变换
+             * --------------
+             */
+
+            //  移动
+            "translate": function translate(x, y) {
+                transform_current += ' translate(' + x + ',' + y + ')';
+                return enhancePainter;
+            },
+
+            //  旋转
+            "rotate": function rotate(deg) {
+                transform_current += ' rotate(' + deg / Math.PI * 180 + ')';
+                return enhancePainter;
+            },
+
+            // 缩放
+            "scale": function scale(x, y) {
+                y = y || x;
+                transform_current += ' scale(' + x + ',' + y + ')';
+                return enhancePainter;
             }
 
         };
@@ -1699,6 +1980,7 @@ var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol
     // 负责启动具体的绘图对象
     function painter() {
 
+        // 因为绘图画布是必须的，因此在判断画布类型前，如果压根没有结点，肯定是非法的
         if (!isNode(this[0])) throw new Error('Target empty!');
 
         var target = this[0],
@@ -1720,11 +2002,11 @@ var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol
         if (this[0].nodeName.toLowerCase() !== 'canvas') throw new Error('Layer is not a function!');
 
         // 画笔
-        var painter = this[0].getContext("2d"),
+        var painter = this.painter(),
 
         // 图层集合
-        layer = {};
-        layer_index = [];
+        layer = {},
+            layer_index = [];
         var width = this[0].clientWidth,
             //内容+内边距
         height = this[0].clientHeight;
@@ -1737,6 +2019,7 @@ var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol
                     // 初始化的图层都可见
                     layer[id] = { "visible": true };
 
+                    // 后期可以考虑使用离线画布offScreenCanvas提高效率
                     layer[id].canvas = document.createElement('canvas');
                     // 设置大小才会避免莫名其妙的错误
                     layer[id].canvas.setAttribute('width', width);
@@ -1766,6 +2049,7 @@ var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol
             "update": function update() {
                 painter.clearRect(0, 0, width, height);
                 painter.save();
+
                 for (var i = 0; i < layer_index.length; i++) {
                     if (layer[layer_index[i]].visible) painter.drawImage(layer[layer_index[i]].canvas, 0, 0, width, height, 0, 0, width, height);
                 }
@@ -1829,39 +2113,44 @@ var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol
 
     });
 
+    // 判断当前环境，如果不是浏览器环境
     if ((typeof module === "undefined" ? "undefined" : _typeof(module)) === "object" && _typeof(module.exports) === "object") {
         module.exports = image2D;
-    } else {
-        var
-        // 保存之前的image2D，防止直接覆盖
-        _image2D = window.image2D,
-
-
-        // 保存之前的$$，防止直接覆盖
-        _$$ = window.$$;
-
-        image2D.noConflict = function (deep) {
-
-            // 如果当前的$$是被最新的image2D覆盖的
-            // 恢复之前的
-            if (window.$$ === image2D) {
-                window.$$ = _$$;
-            }
-
-            // 如果当前的image2D是被最新的image2D覆盖的
-            // 且标记需要恢复
-            // 恢复之前的
-            if (deep && window.image2D === image2D) {
-                window.image2D = _image2D;
-            }
-
-            // 返回当前image2D
-            // 因为调用这个方法以后
-            // 全局window下的image2D和$$是什么
-            // 已经不一定了
-            return image2D;
-        };
-        // 挂载库对象到根
-        window.image2D = window.$$ = image2D;
     }
+    // 浏览器环境下
+    // 因为浏览器下挂载到window对象上
+    // 为了防止覆盖，额外提供一个noConflict方法，用以在覆盖的时候恢复
+    else {
+            var
+            // 保存之前的image2D，防止直接覆盖
+            _image2D = window.image2D,
+
+
+            // 保存之前的$$，防止直接覆盖
+            _$$ = window.$$;
+
+            image2D.noConflict = function (deep) {
+
+                // 如果当前的$$是被最新的image2D覆盖的
+                // 恢复之前的
+                if (window.$$ === image2D) {
+                    window.$$ = _$$;
+                }
+
+                // 如果当前的image2D是被最新的image2D覆盖的
+                // 且标记需要恢复
+                // 恢复之前的
+                if (deep && window.image2D === image2D) {
+                    window.image2D = _image2D;
+                }
+
+                // 返回当前image2D
+                // 因为调用这个方法以后
+                // 全局window下的image2D和$$是什么
+                // 已经不一定了
+                return image2D;
+            };
+            // 挂载库对象到根
+            window.image2D = window.$$ = image2D;
+        }
 })();

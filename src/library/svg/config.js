@@ -1,5 +1,6 @@
 import { isNode } from '../../core/type';
 import arc from '../calculate/graphic/arc';
+import toNode from '../../core/to-node';
 
 export default function (key, value) {
 
@@ -89,4 +90,25 @@ export let initPath = function (painter, path) {
     if (painter[0].nodeName.toLowerCase() !== 'path') throw new Error('Need a <path> !');
     painter.attr('d', path);
     return painter;
+};
+
+// 画矩形统一设置方法
+export let initRect = function (painter, x, y, width, height) {
+    if (painter[0].nodeName.toLowerCase() !== 'rect') throw new Error('Need a <rect> !');
+    painter.attr({
+        "x": x,
+        "y": y,
+        "width": width,
+        "height": height
+    });
+    return painter;
+};
+
+export let initDefs = function (target) {
+    let defs = target.getElementsByTagName('defs');
+    if (defs.length <= 0) {
+        defs = [toNode("<defs>", "SVG")];
+        target.appendChild(defs[0]);
+    }
+    return defs[0];
 };
